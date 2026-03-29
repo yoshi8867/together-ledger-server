@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Together Ledger 서버 이전 가이드</title>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; background: #f5f5f5; color: #222; }
+    h1 { font-size: 1.5rem; border-bottom: 2px solid #4f46e5; padding-bottom: 8px; }
+    h2 { font-size: 1.1rem; margin-top: 36px; color: #4f46e5; }
+    .step { background: #fff; border-radius: 8px; padding: 16px 20px; margin: 12px 0; border-left: 4px solid #4f46e5; }
+    .step label { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 0.97rem; line-height: 1.6; }
+    .step input[type=checkbox] { margin-top: 3px; width: 16px; height: 16px; flex-shrink: 0; accent-color: #4f46e5; }
+    .step.done { border-left-color: #22c55e; opacity: 0.6; }
+    code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 14px 16px; border-radius: 6px; font-size: 0.85rem; overflow-x: auto; white-space: pre-wrap; }
+    .tag { display: inline-block; font-size: 0.72rem; background: #ede9fe; color: #6d28d9; padding: 1px 7px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
+    .note { background: #fef9c3; border-radius: 6px; padding: 10px 14px; font-size: 0.88rem; margin-top: 8px; color: #713f12; }
+    .section-title { font-size: 1.2rem; font-weight: bold; margin-top: 40px; margin-bottom: 4px; }
+    .divider { border: none; border-top: 1px solid #ddd; margin: 30px 0; }
+  </style>
+</head>
+<body>
+
+<h1>Together Ledger 서버 이전 가이드</h1>
+<p style="color:#555; font-size:0.9rem;">SQLite → Neon(PostgreSQL) 로컬 테스트 → Render 배포</p>
+
+<!-- ─────────────────────────────────────── -->
+<div class="section-title">① Neon DB 세팅</div>
+
+<div class="step" id="s1">
+  <label><input type="checkbox" onchange="toggle(this)">
+    <span><a href="https://neon.tech" target="_blank">neon.tech</a>에 로그인 후 새 프로젝트 생성 (이름 자유, Region은 Singapore 추천)</span>
+  </label>
+</div>
+
+<div class="step" id="s2">
+  <label><input type="checkbox" onchange="toggle(this)">
+    <span>프로젝트 생성 후 <b>SQL Editor</b> 탭 열기</span>
+  </label>
+</div>
+
+<div class="step" id="s3">
+  <label><input type="checkbox" onchange="toggle(this)">
+    <span>아래 SQL을 붙여넣고 <b>Run</b> 실행</span>
+  </label>
+  <pre>CREATE TABLE IF NOT EXISTS users (
+  sync_id       TEXT   PRIMARY KEY,
+  password_hash TEXT   NOT NULL,
+  created_at    BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS devices (
+  id            SERIAL PRIMARY KEY,
+  sync_id       TEXT   NOT NULL REFERENCES users(sync_id),
+  android_id    TEXT   NOT NULL,
+  device_name   TEXT,
+  registered_at BIGINT NOT NULL,
+  last_seen_at  BIGINT NOT NULL,
+  UNIQUE (sync_id, android_id)
+);
+
+CREATE TABLE IF NOT EXISTS categories (
+  id         TEXT    PRIMARY KEY,
+  sync_id    TEXT    NOT NULL REFERENCES users(sync_id),
+  name       TEXT    NOT NULL,
+  is_income  INTEGER NOT NULL,
+  updated_at BIGINT  NOT NULL,
+  is_deleted INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS transactions (
+  id                 TEXT    PRIMARY KEY,
+  sync_id            TEXT    NOT NULL REFERENCES users(sync_id),
+  category_server_id TEXT,
+  content            TEXT    NOT NULL,
+  time_stamp         TEXT    NOT NULL,
+  amount             INTEGER NOT NULL,
+  asset_type         TEXT    NOT NULL,
+  is_income          INTEGER NOT NULL,
+  updated_at         BIGINT  NOT NULL,
+  is_deleted         INTEGER NOT NULL DEFAULT 0
+);</pre>
+  <div class="note">4개 테이블이 모두 생성되면 OK.</div>
+</div>
+
+<div class="step" id="s4">
+  <label><input type="checkbox" onchange="toggle(this)">
+    <span>Neon 대시보드 좌측 <b>Dashboard</b> → <b>Connection string</b> 복사<br>
+    <span style="color:#555;font-size:0.88rem;">형태: <code>postgresql://user:password@ep-xxx.ap-southeast-1.aws.neon.tech/neondb?sslmode=require</code></span></span>
+  </label>
+</div>
+
+<!-- ─────────────────────────────────────── -->
+<hr class="divider">
+<div class="section-title">② 로컬 서버 .env 설정</div>
+
+<div class="step" id="s5">
+  <label><input type="checkbox" onchange="toggle(this)">
+    <span><code>together-ledger-server/.env</code> 파일 열고 <code>DATABASE_URL=</code> 뒤에 복사한 connection string 붙여넣기</span>
+  </label>
+  <pre>DATABASE_URL=postgresql://user:password@ep-xxx...neon.tech/neondb?sslmode=require</pre>
+</div>
+
+<!-- ─────────────────────────────────────── -->
+<hr class="divider">
+<div class="section-title">③ 패키지 설치 및 로컬 테스트</div>
+
+<div class="step" id="s6">
+  <label><input type="checkbox" onchange="toggle(this)">
+    <span><code>together-ledger-server</code> 폴더에서 아래 명령 실행</span>
+  </label>
+  <pre>npm install</pre>
+</div>
+
+<div class="step" id="s7">
+  <label><input type="checkbox" onchange="toggle(this)">
+    <span>서버 실행</span>
+  </label>
+  <pre>npm start</pre>
+  <div class="note">콘솔에 <b>Together Ledger 서버 실행 중: http://localhost:3000</b> 이 뜨면 OK.<br>오류가 나면 DATABASE_URL이 올바른지 확인.</div>
+</div>
+
+<div class="step" id="s8">
+  <label><input type="checkbox" onchange="toggle(this)">
+    <span>앱에서 동기화 테스트 — 등록/로그인/푸시/풀 모두 확인</span>
+  </label>
+</div>
+
+<!-- ─────────────────────────────────────── -->
+<hr class="divider">
+<div class="section-title">④ Render 배포 <span class="tag">로컬 테스트 완료 후</span></div>
+
+<div class="step" id="s9">
+  <label><input type="checkbox" onchange="toggle(this)">
+    <span><a href="https://render.com" target="_blank">render.com</a> 로그인 → <b>New Web Service</b> → GitHub 레포 연결</span>
+  </label>
+  <div class="note">서버 코드(<code>together-ledger-server/</code>)가 별도 레포이거나 모노레포 서브폴더에 있다면 Root Directory를 <code>together-ledger-server</code>로 지정.</div>
+</div>
+
+<div class="step" id="s10">
+  <label><input type="checkbox" onchange="toggle(this)">
+    <span>Render 설정값 입력</span>
+  </label>
+  <pre>Build Command : npm install
+Start Command : npm start
+Node Version  : 20 이상 (Environment 탭에서 설정)</pre>
+</div>
+
+<div class="step" id="s11">
+  <label><input type="checkbox" onchange="toggle(this)">
+    <span>Render <b>Environment</b> 탭에서 환경변수 등록</span>
+  </label>
+  <pre>DATABASE_URL           = (Neon connection string 그대로)
+JWT_SECRET             = (긴 랜덤 문자열, 로컬과 같아도 됨)
+MAX_ACCOUNTS_PER_DEVICE = 5</pre>
+  <div class="note"><code>PORT</code>는 Render가 자동으로 주입하므로 등록 불필요.</div>
+</div>
+
+<div class="step" id="s12">
+  <label><input type="checkbox" onchange="toggle(this)">
+    <span>Deploy 완료 후 앱의 서버 URL을 Render가 발급한 URL로 변경<br>
+    <span style="color:#555;font-size:0.88rem;">예: <code>https://together-ledger-server.onrender.com</code></span></span>
+  </label>
+</div>
+
+<script>
+  function toggle(cb) {
+    const step = cb.closest('.step');
+    if (cb.checked) step.classList.add('done');
+    else step.classList.remove('done');
+  }
+</script>
+</body>
+</html>
